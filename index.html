@@ -10,7 +10,7 @@
 </style>
 </head>
 <body>
-<div id="hud">ARCADE CHAOS SOCCER — Arrows move, Z dash, X kick</div>
+<div id="hud">ARCADE CHAOS SOCCER — WASD/Arrows move, Z dash, E kick</div>
 <canvas id="c" width="640" height="360"></canvas>
 
 <script>
@@ -37,20 +37,30 @@ document.addEventListener("keyup", e => keys[e.key] = false);
 
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 
-// PLAYER MOVEMENT
+// PLAYER MOVEMENT (WASD + Arrows)
 function movePlayer(){
   let sp = keys["z"]||keys["Z"] ? player.dash : player.speed;
   let dx=0, dy=0;
+
+  // Arrow keys
   if(keys["ArrowUp"]) dy -= 1;
   if(keys["ArrowDown"]) dy += 1;
   if(keys["ArrowLeft"]) dx -= 1;
   if(keys["ArrowRight"]) dx += 1;
+
+  // WASD keys
+  if(keys["w"]||keys["W"]) dy -= 1;
+  if(keys["s"]||keys["S"]) dy += 1;
+  if(keys["a"]||keys["A"]) dx -= 1;
+  if(keys["d"]||keys["D"]) dx += 1;
+
   if(dx||dy){
     let l = Math.hypot(dx,dy);
     dx/=l; dy/=l;
     player.x += dx*sp;
     player.y += dy*sp;
   }
+
   player.x = clamp(player.x,20,620);
   player.y = clamp(player.y,20,340);
 }
@@ -111,7 +121,8 @@ function collidePlayer(){
     ball.x = player.x + Math.cos(ang)*20;
     ball.y = player.y + Math.sin(ang)*20;
 
-    if(keys["x"]||keys["X"]){
+    // E = Kick
+    if(keys["e"]||keys["E"]){
       let kick = keys["z"]||keys["Z"] ? 10 : 6;
       ball.vx = Math.cos(ang)*kick;
       ball.vy = Math.sin(ang)*kick;
