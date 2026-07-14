@@ -12,22 +12,32 @@
 <body>
 <div id="hud">ARCADE CHAOS SOCCER — Arrows move, Z dash, X kick</div>
 <canvas id="c" width="640" height="360"></canvas>
+
 <script>
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
 
-const player = { x:120, y:180, w:14, h:14, speed:2.4, dash:4.2 };
-const ai = { x:520, y:180, w:14, h:14, speed:2.8 };
+// Player, AI, Keeper, Ball
+const player = { x:120, y:180, speed:2.4, dash:4.2 };
+const ai = { x:520, y:180, speed:2.8 };
+const keeper = { x:600, y:180, w:12, h:30, speed:2 };
+
 const ball = { x:320, y:180, r:6, vx:0, vy:0, friction:0.985, max:9 };
+
+// Goals
+const goalLeft = { x: 10, y: 120, w: 4, h: 120 };
+const goalRight = { x: 626, y: 120, w: 4, h: 120 };
 
 let score = 0;
 let keys = {};
+let anim = 0;
 
 document.addEventListener("keydown", e => keys[e.key] = true);
 document.addEventListener("keyup", e => keys[e.key] = false);
 
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 
+// PLAYER MOVEMENT
 function movePlayer(){
   let sp = keys["z"]||keys["Z"] ? player.dash : player.speed;
   let dx=0, dy=0;
@@ -45,21 +55,34 @@ function movePlayer(){
   player.y = clamp(player.y,20,340);
 }
 
+// AI MOVEMENT
 function moveAI(){
-  // AI is intentionally chaotic
-  let tx = ball.x + (Math.random()*40 - 20);
-  let ty = ball.y + (Math.random()*40 - 20);
-  let dx = tx - ai.x;
-  let dy = ty - ai.y;
+  let futureX = ball.x + ball.vx*10;
+  let futureY = ball.y + ball.vy*10;
+
+  let dx = futureX - ai.x + (Math.random()*40 - 20);
+  let dy = futureY - ai.y + (Math.random()*40 - 20);
+
   let l = Math.hypot(dx,dy);
   if(l>1){
     ai.x += (dx/l)*ai.speed;
     ai.y += (dy/l)*ai.speed;
   }
+
   ai.x = clamp(ai.x,340,620);
   ai.y = clamp(ai.y,20,340);
 }
 
+// KEEPER MOVEMENT
+function moveKeeper(){
+  let dy = ball.y - keeper.y;
+  if(Math.abs(dy) > 2){
+    keeper.y += Math.sign(dy) * keeper.speed;
+  }
+  keeper.y = clamp(keeper.y, 40, 320);
+}
+
+// BALL PHYSICS
 function ballPhysics(){
   ball.x += ball.vx;
   ball.y += ball.vy;
@@ -80,6 +103,7 @@ function ballPhysics(){
   ball.y = clamp(ball.y,10+ball.r,350-ball.r);
 }
 
+// COLLISIONS
 function collidePlayer(){
   let d = Math.hypot(ball.x-player.x, ball.y-player.y);
   if(d < 20){
@@ -104,22 +128,82 @@ function collideAI(){
   }
 }
 
+function collideKeeper(){
+  let d = Math.hypot(ball.x-keeper.x, ball.y-keeper.y);
+  if(d < 22){
+    let ang = Math.atan2(ball.y-keeper.y, ball.x-keeper.x);
+    ball.vx = Math.cos(ang) * -10;
+    ball.vy = Math.sin(ang) * -10;
+  }
+}
+
+// GOAL CHECK
 function checkGoal(){
-  let goalLeft = 620;
-  let top = 120, bottom = 240;
-  if(ball.x+ball.r >= goalLeft && ball.y>=top && ball.y<=bottom){
+  // Player scores (right goal)
+  if(ball.x+ball.r >= goalRight.x && ball.y >= goalRight.y && ball.y <= goalRight.y+goalRight.h){
     score++;
+    reset();
+  }
+
+  // AI scores (left goal)
+  if(ball.x-ball.r <= goalLeft.x+goalLeft.w && ball.y >= goalLeft.y && ball.y <= goalLeft.y+goalLeft.h){
+    score--;
     reset();
   }
 }
 
+// RESET
 function reset(){
   player.x=120; player.y=180;
   ai.x=520; ai.y=180;
+  keeper.x=600; keeper.y=180;
   ball.x=320; ball.y=180;
   ball.vx=0; ball.vy=0;
 }
 
+// DRAW PLAYER
+function drawPlayer(){
+  ctx.fillStyle = "#ff0";
+  ctx.fillRect(player.x-6, player.y-10, 12, 18);
+
+  ctx.fillStyle = "#ffe0b3";
+  ctx.beginPath();
+  ctx.arc(player.x, player.y-16, 6, 0, Math.PI*2);
+  ctx.fill();
+
+  let legOffset = Math.sin(anim) * 2;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(player.x-6, player.y+8 + legOffset, 5, 10);
+  ctx.fillRect(player.x+1, player.y+8 - legOffset, 5, 10);
+}
+
+// DRAW AI
+function drawAI(){
+  ctx.fillStyle = "#f44";
+  ctx.fillRect(ai.x-6, ai.y-10, 12, 18);
+
+  ctx.fillStyle = "#ccc";
+  ctx.beginPath();
+  ctx.arc(ai.x, ai.y-16, 6, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = "#00f";
+  ctx.fillRect(ai.x-4, ai.y-18, 3, 3);
+  ctx.fillRect(ai.x+1, ai.y-18, 3, 3);
+
+  let legOffsetAI = Math.sin(anim*1.3) * 2;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(ai.x-6, ai.y+8 + legOffsetAI, 5, 10);
+  ctx.fillRect(ai.x+1, ai.y+8 - legOffsetAI, 5, 10);
+}
+
+// DRAW KEEPER
+function drawKeeper(){
+  ctx.fillStyle="#0ff";
+  ctx.fillRect(keeper.x-keeper.w/2, keeper.y-keeper.h/2, keeper.w, keeper.h);
+}
+
+// DRAW EVERYTHING
 function draw(){
   ctx.fillStyle="#0a4";
   ctx.fillRect(0,0,640,360);
@@ -135,14 +219,14 @@ function draw(){
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // Goals
   ctx.fillStyle="#fff";
-  ctx.fillRect(620,120,4,120);
+  ctx.fillRect(goalLeft.x, goalLeft.y, goalLeft.w, goalLeft.h);
+  ctx.fillRect(goalRight.x, goalRight.y, goalRight.w, goalRight.h);
 
-  ctx.fillStyle="#ff0";
-  ctx.fillRect(player.x-player.w/2, player.y-player.h/2, player.w, player.h);
-
-  ctx.fillStyle="#f44";
-  ctx.fillRect(ai.x-ai.w/2, ai.y-ai.h/2, ai.w, ai.h);
+  drawPlayer();
+  drawAI();
+  drawKeeper();
 
   ctx.fillStyle="#fff";
   ctx.beginPath();
@@ -154,12 +238,16 @@ function draw(){
   ctx.fillText("Score: "+score, 20, 30);
 }
 
+// MAIN LOOP
 function loop(){
+  anim += 0.15;
   movePlayer();
   moveAI();
+  moveKeeper();
   ballPhysics();
   collidePlayer();
   collideAI();
+  collideKeeper();
   checkGoal();
   draw();
   requestAnimationFrame(loop);
