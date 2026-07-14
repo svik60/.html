@@ -17,20 +17,28 @@
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
 
-// Player, AI, Keeper, Ball
+// Player, AI, Ball
 const player = { x:120, y:180, speed:2.4, dash:4.2 };
 const ai = { x:520, y:180, speed:2.8 };
-const keeper = { x:600, y:180, w:12, h:30, speed:2 };
-
 const ball = { x:320, y:180, r:6, vx:0, vy:0, friction:0.985, max:9 };
 
 // Goals
 const goalLeft = { x: 10, y: 120, w: 4, h: 120 };
 const goalRight = { x: 626, y: 120, w: 4, h: 120 };
 
+// TWO KEEPERS
+const keeperLeft = { x: 40, y: 180, w: 12, h: 30, speed: 2 };
+const keeperRight = { x: 600, y: 180, w: 12, h: 30, speed: 2 };
+
 let score = 0;
 let keys = {};
 let anim = 0;
+
+// Replay system
+let replay = false;
+let replayTimer = 0;
+let replayBall = { x:0, y:0 };
+let replayZoom = 1.0;
 
 document.addEventListener("keydown", e => keys[e.key] = true);
 document.addEventListener("keyup", e => keys[e.key] = false);
@@ -42,17 +50,10 @@ function movePlayer(){
   let sp = keys["z"]||keys["Z"] ? player.dash : player.speed;
   let dx=0, dy=0;
 
-  // Arrow keys
-  if(keys["ArrowUp"]) dy -= 1;
-  if(keys["ArrowDown"]) dy += 1;
-  if(keys["ArrowLeft"]) dx -= 1;
-  if(keys["ArrowRight"]) dx += 1;
-
-  // WASD keys
-  if(keys["w"]||keys["W"]) dy -= 1;
-  if(keys["s"]||keys["S"]) dy += 1;
-  if(keys["a"]||keys["A"]) dx -= 1;
-  if(keys["d"]||keys["D"]) dx += 1;
+  if(keys["ArrowUp"]||keys["w"]||keys["W"]) dy -= 1;
+  if(keys["ArrowDown"]||keys["s"]||keys["S"]) dy += 1;
+  if(keys["ArrowLeft"]||keys["a"]||keys["A"]) dx -= 1;
+  if(keys["ArrowRight"]||keys["d"]||keys["D"]) dx += 1;
 
   if(dx||dy){
     let l = Math.hypot(dx,dy);
@@ -83,13 +84,13 @@ function moveAI(){
   ai.y = clamp(ai.y,20,340);
 }
 
-// KEEPER MOVEMENT
-function moveKeeper(){
-  let dy = ball.y - keeper.y;
+// KEEPER MOVEMENT (both sides)
+function moveKeeper(k){
+  let dy = ball.y - k.y;
   if(Math.abs(dy) > 2){
-    keeper.y += Math.sign(dy) * keeper.speed;
+    k.y += Math.sign(dy) * k.speed;
   }
-  keeper.y = clamp(keeper.y, 40, 320);
+  k.y = clamp(k.y, 40, 320);
 }
 
 // BALL PHYSICS
@@ -121,7 +122,6 @@ function collidePlayer(){
     ball.x = player.x + Math.cos(ang)*20;
     ball.y = player.y + Math.sin(ang)*20;
 
-    // E = Kick
     if(keys["e"]||keys["E"]){
       let kick = keys["z"]||keys["Z"] ? 10 : 6;
       ball.vx = Math.cos(ang)*kick;
@@ -139,26 +139,45 @@ function collideAI(){
   }
 }
 
-function collideKeeper(){
-  let d = Math.hypot(ball.x-keeper.x, ball.y-keeper.y);
+function collideKeeper(k){
+  let d = Math.hypot(ball.x-k.x, ball.y-k.y);
   if(d < 22){
-    let ang = Math.atan2(ball.y-keeper.y, ball.x-keeper.x);
+    let ang = Math.atan2(ball.y-k.y, ball.x-k.x);
     ball.vx = Math.cos(ang) * -10;
     ball.vy = Math.sin(ang) * -10;
   }
 }
 
-// GOAL CHECK
+// GOAL CHECK + REPLAY TRIGGER
 function checkGoal(){
-  // Player scores (right goal)
   if(ball.x+ball.r >= goalRight.x && ball.y >= goalRight.y && ball.y <= goalRight.y+goalRight.h){
     score++;
-    reset();
+    startReplay();
   }
 
-  // AI scores (left goal)
   if(ball.x-ball.r <= goalLeft.x+goalLeft.w && ball.y >= goalLeft.y && ball.y <= goalLeft.y+goalLeft.h){
     score--;
+    startReplay();
+  }
+}
+
+// REPLAY MODE
+function startReplay(){
+  replay = true;
+  replayTimer = 120; // 2 seconds
+  replayBall.x = ball.x;
+  replayBall.y = ball.y;
+  replayZoom = 1.0;
+}
+
+function updateReplay(){
+  replayZoom += 0.02;
+  replayBall.x += 1.5;
+  replayBall.y += Math.sin(anim*0.2) * 1.2;
+
+  replayTimer--;
+  if(replayTimer <= 0){
+    replay = false;
     reset();
   }
 }
@@ -167,7 +186,8 @@ function checkGoal(){
 function reset(){
   player.x=120; player.y=180;
   ai.x=520; ai.y=180;
-  keeper.x=600; keeper.y=180;
+  keeperLeft.x=40; keeperLeft.y=180;
+  keeperRight.x=600; keeperRight.y=180;
   ball.x=320; ball.y=180;
   ball.vx=0; ball.vy=0;
 }
@@ -208,36 +228,95 @@ function drawAI(){
   ctx.fillRect(ai.x+1, ai.y+8 - legOffsetAI, 5, 10);
 }
 
-// DRAW KEEPER
-function drawKeeper(){
+// DRAW KEEPERS
+function drawKeeper(k){
   ctx.fillStyle="#0ff";
-  ctx.fillRect(keeper.x-keeper.w/2, keeper.y-keeper.h/2, keeper.w, keeper.h);
+  ctx.fillRect(k.x-k.w/2, k.y-k.h/2, k.w, k.h);
 }
 
-// DRAW EVERYTHING
-function draw(){
+// DRAW STADIUM
+function drawStadium(){
+  ctx.fillStyle="#222";
+  ctx.fillRect(0,0,640,80);
+
+  for(let i=0;i<200;i++){
+    ctx.fillStyle = ["#f00","#0f0","#00f","#ff0","#f0f"][Math.floor(Math.random()*5)];
+    ctx.fillRect(Math.random()*640, Math.random()*80, 2, 2);
+  }
+
+  ctx.fillStyle="#fff";
+  ctx.fillRect(50,10,20,40);
+  ctx.fillRect(570,10,20,40);
+}
+
+// DRAW REPLAY CAMERA
+function drawReplay(){
+  ctx.save();
+  ctx.translate(320,180);
+  ctx.scale(replayZoom, replayZoom);
+  ctx.translate(-replayBall.x, -replayBall.y);
+
+  drawStadium();
+
   ctx.fillStyle="#0a4";
-  ctx.fillRect(0,0,640,360);
+  ctx.fillRect(0,80,640,280);
 
   ctx.strokeStyle="#fff";
   ctx.lineWidth=2;
-  ctx.strokeRect(10,10,620,340);
+  ctx.strokeRect(10,90,620,260);
 
-  ctx.beginPath();
-  ctx.setLineDash([6,6]);
-  ctx.moveTo(320,10);
-  ctx.lineTo(320,350);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Goals
   ctx.fillStyle="#fff";
   ctx.fillRect(goalLeft.x, goalLeft.y, goalLeft.w, goalLeft.h);
   ctx.fillRect(goalRight.x, goalRight.y, goalRight.w, goalRight.h);
 
   drawPlayer();
   drawAI();
-  drawKeeper();
+  drawKeeper(keeperLeft);
+  drawKeeper(keeperRight);
+
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  ctx.arc(replayBall.x,replayBall.y,ball.r,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+
+  ctx.fillStyle="#fff";
+  ctx.font="28px monospace";
+  ctx.fillText("REPLAY", 260, 40);
+}
+
+// DRAW EVERYTHING
+function draw(){
+  if(replay){
+    drawReplay();
+    return;
+  }
+
+  drawStadium();
+
+  ctx.fillStyle="#0a4";
+  ctx.fillRect(0,80,640,280);
+
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=2;
+  ctx.strokeRect(10,90,620,260);
+
+  ctx.beginPath();
+  ctx.setLineDash([6,6]);
+  ctx.moveTo(320,90);
+  ctx.lineTo(320,350);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle="#fff";
+  ctx.fillRect(goalLeft.x, goalLeft.y, goalLeft.w, goalLeft.h);
+  ctx.fillRect(goalRight.x, goalRight.y, goalRight.w, goalRight.h);
+
+  drawPlayer();
+  drawAI();
+  drawKeeper(keeperLeft);
+  drawKeeper(keeperRight);
 
   ctx.fillStyle="#fff";
   ctx.beginPath();
@@ -252,13 +331,23 @@ function draw(){
 // MAIN LOOP
 function loop(){
   anim += 0.15;
+
+  if(replay){
+    updateReplay();
+    draw();
+    requestAnimationFrame(loop);
+    return;
+  }
+
   movePlayer();
   moveAI();
-  moveKeeper();
+  moveKeeper(keeperLeft);
+  moveKeeper(keeperRight);
   ballPhysics();
   collidePlayer();
   collideAI();
-  collideKeeper();
+  collideKeeper(keeperLeft);
+  collideKeeper(keeperRight);
   checkGoal();
   draw();
   requestAnimationFrame(loop);
