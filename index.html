@@ -1,221 +1,172 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Retro Soccer</title>
-  <style>
-    body { margin:0; background:#111; display:flex; justify-content:center; align-items:center; height:100vh; color:#fff; font-family:monospace; }
-    canvas { background:#0b3d0b; border:4px solid #fff; image-rendering:pixelated; }
-    #info { position:fixed; top:10px; left:10px; font-size:14px; }
-  </style>
+<meta charset="UTF-8">
+<title>Arcade Chaos Soccer</title>
+<style>
+  body { margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; }
+  canvas { border:4px solid #fff; background:#0a4; image-rendering:pixelated; }
+  #hud { position:absolute; top:10px; left:10px; color:white; font-family:monospace; }
+</style>
 </head>
 <body>
-<div id="info">Arrows: Move | Space: Kick | Score before time runs out!</div>
-<canvas id="game" width="640" height="360"></canvas>
+<div id="hud">ARCADE CHAOS SOCCER — Arrows move, Z dash, X kick</div>
+<canvas id="c" width="640" height="360"></canvas>
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
 
-const W = canvas.width;
-const H = canvas.height;
+const player = { x:120, y:180, w:14, h:14, speed:2.4, dash:4.2 };
+const ai = { x:520, y:180, w:14, h:14, speed:2.8 };
+const ball = { x:320, y:180, r:6, vx:0, vy:0, friction:0.985, max:9 };
 
-// Player, ball, goal, enemies
-let player = { x: 80, y: H/2, w: 16, h: 24, speed: 3 };
-let ball = { x: 120, y: H/2, r: 6, vx: 0, vy: 0, free: true };
-let goal = { x: W-60, y: H/2-40, w: 20, h: 80 };
-
-let enemies = [];
-for (let i=0;i<4;i++){
-  enemies.push({
-    x: 260 + i*60,
-    y: 80 + i*40,
-    w: 16,
-    h: 24,
-    dir: i%2===0?1:-1,
-    speed: 1.5
-  });
-}
-
-let keys = {};
 let score = 0;
-let time = 60; // seconds
-let lastTime = performance.now();
-let gameOver = false;
-let msg = "";
+let keys = {};
 
-window.addEventListener("keydown", e => {
-  keys[e.key] = true;
-  if (e.key === " " || e.key === "Spacebar") e.preventDefault();
-});
-window.addEventListener("keyup", e => { keys[e.key] = false; });
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
 
-function update(dt){
-  if (gameOver) return;
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 
-  // Timer
-  time -= dt;
-  if (time <= 0){
-    time = 0;
-    gameOver = true;
-    msg = "TIME UP! FINAL SCORE: " + score;
+function movePlayer(){
+  let sp = keys["z"]||keys["Z"] ? player.dash : player.speed;
+  let dx=0, dy=0;
+  if(keys["ArrowUp"]) dy -= 1;
+  if(keys["ArrowDown"]) dy += 1;
+  if(keys["ArrowLeft"]) dx -= 1;
+  if(keys["ArrowRight"]) dx += 1;
+  if(dx||dy){
+    let l = Math.hypot(dx,dy);
+    dx/=l; dy/=l;
+    player.x += dx*sp;
+    player.y += dy*sp;
+  }
+  player.x = clamp(player.x,20,620);
+  player.y = clamp(player.y,20,340);
+}
+
+function moveAI(){
+  // AI is intentionally chaotic
+  let tx = ball.x + (Math.random()*40 - 20);
+  let ty = ball.y + (Math.random()*40 - 20);
+  let dx = tx - ai.x;
+  let dy = ty - ai.y;
+  let l = Math.hypot(dx,dy);
+  if(l>1){
+    ai.x += (dx/l)*ai.speed;
+    ai.y += (dy/l)*ai.speed;
+  }
+  ai.x = clamp(ai.x,340,620);
+  ai.y = clamp(ai.y,20,340);
+}
+
+function ballPhysics(){
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  ball.vx *= ball.friction;
+  ball.vy *= ball.friction;
+
+  let sp = Math.hypot(ball.vx,ball.vy);
+  if(sp > ball.max){
+    ball.vx = ball.vx/sp * ball.max;
+    ball.vy = ball.vy/sp * ball.max;
   }
 
-  // Player movement
-  if (keys["ArrowUp"]) player.y -= player.speed;
-  if (keys["ArrowDown"]) player.y += player.speed;
-  if (keys["ArrowLeft"]) player.x -= player.speed;
-  if (keys["ArrowRight"]) player.x += player.speed;
+  if(ball.x-ball.r<10 || ball.x+ball.r>630) ball.vx *= -1.1;
+  if(ball.y-ball.r<10 || ball.y+ball.r>350) ball.vy *= -1.1;
 
-  // Clamp player
-  player.x = Math.max(20, Math.min(W-80, player.x));
-  player.y = Math.max(40, Math.min(H-40, player.y));
+  ball.x = clamp(ball.x,10+ball.r,630-ball.r);
+  ball.y = clamp(ball.y,10+ball.r,350-ball.r);
+}
 
-  // Ball follow if free and close to player
-  let dx = ball.x - player.x;
-  let dy = ball.y - player.y;
-  let dist = Math.sqrt(dx*dx + dy*dy);
-  if (ball.free && dist < 30){
-    ball.x = player.x + 20;
-    ball.y = player.y + 4;
-  }
+function collidePlayer(){
+  let d = Math.hypot(ball.x-player.x, ball.y-player.y);
+  if(d < 20){
+    let ang = Math.atan2(ball.y-player.y, ball.x-player.x);
+    ball.x = player.x + Math.cos(ang)*20;
+    ball.y = player.y + Math.sin(ang)*20;
 
-  // Kick
-  if ((keys[" "] || keys["Spacebar"]) && ball.free){
-    ball.free = false;
-    ball.vx = 6;
-    ball.vy = (Math.random()*2-1)*2;
-  }
-
-  // Ball physics
-  if (!ball.free){
-    ball.x += ball.vx;
-    ball.y += ball.vy;
-    ball.vx *= 0.99;
-    ball.vy *= 0.99;
-
-    // Walls
-    if (ball.y - ball.r < 20 || ball.y + ball.r > H-20){
-      ball.vy *= -1;
-    }
-    if (ball.x - ball.r < 20){
-      ball.vx *= -1;
-    }
-
-    // Stop ball
-    if (Math.abs(ball.vx) < 0.1 && Math.abs(ball.vy) < 0.1){
-      resetBall();
+    if(keys["x"]||keys["X"]){
+      let kick = keys["z"]||keys["Z"] ? 10 : 6;
+      ball.vx = Math.cos(ang)*kick;
+      ball.vy = Math.sin(ang)*kick;
     }
   }
+}
 
-  // Enemies movement
-  enemies.forEach(e => {
-    e.y += e.dir * e.speed;
-    if (e.y < 40 || e.y > H-40) e.dir *= -1;
+function collideAI(){
+  let d = Math.hypot(ball.x-ai.x, ball.y-ai.y);
+  if(d < 20){
+    let ang = Math.atan2(ball.y-ai.y, ball.x-ai.x);
+    ball.vx = Math.cos(ang)*8;
+    ball.vy = Math.sin(ang)*8;
+  }
+}
 
-    // Collision with ball
-    if (!ball.free && rectCircleCollide(e, ball)){
-      // Deflect ball
-      ball.vx *= -1;
-      ball.vy = (Math.random()*2-1)*3;
-    }
-  });
-
-  // Goal check
-  if (!ball.free && ball.x + ball.r > goal.x && ball.x - ball.r < goal.x+goal.w &&
-      ball.y + ball.r > goal.y && ball.y - ball.r < goal.y+goal.h){
+function checkGoal(){
+  let goalLeft = 620;
+  let top = 120, bottom = 240;
+  if(ball.x+ball.r >= goalLeft && ball.y>=top && ball.y<=bottom){
     score++;
-    resetBall();
+    reset();
   }
 }
 
-function resetBall(){
-  ball.free = true;
-  ball.x = player.x + 20;
-  ball.y = player.y + 4;
-  ball.vx = 0;
-  ball.vy = 0;
-}
-
-function rectCircleCollide(rect, circle){
-  let closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.w));
-  let closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.h));
-  let dx = circle.x - closestX;
-  let dy = circle.y - closestY;
-  return dx*dx + dy*dy < circle.r*circle.r;
-}
-
-function drawField(){
-  ctx.fillStyle = "#0b3d0b";
-  ctx.fillRect(0,0,W,H);
-
-  // Center line
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(W/2, 20);
-  ctx.lineTo(W/2, H-20);
-  ctx.stroke();
-
-  // Center circle
-  ctx.beginPath();
-  ctx.arc(W/2, H/2, 40, 0, Math.PI*2);
-  ctx.stroke();
-
-  // Boundaries
-  ctx.strokeRect(20,20,W-40,H-40);
-
-  // Goal box
-  ctx.strokeRect(goal.x-20, goal.y-20, goal.w+40, goal.h+40);
+function reset(){
+  player.x=120; player.y=180;
+  ai.x=520; ai.y=180;
+  ball.x=320; ball.y=180;
+  ball.vx=0; ball.vy=0;
 }
 
 function draw(){
-  drawField();
+  ctx.fillStyle="#0a4";
+  ctx.fillRect(0,0,640,360);
 
-  // Goal
-  ctx.fillStyle = "#ffff00";
-  ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=2;
+  ctx.strokeRect(10,10,620,340);
 
-  // Player
-  ctx.fillStyle = "#00ffff";
-  ctx.fillRect(player.x, player.y, player.w, player.h);
-
-  // Ball
-  ctx.fillStyle = "#ffffff";
   ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.setLineDash([6,6]);
+  ctx.moveTo(320,10);
+  ctx.lineTo(320,350);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle="#fff";
+  ctx.fillRect(620,120,4,120);
+
+  ctx.fillStyle="#ff0";
+  ctx.fillRect(player.x-player.w/2, player.y-player.h/2, player.w, player.h);
+
+  ctx.fillStyle="#f44";
+  ctx.fillRect(ai.x-ai.w/2, ai.y-ai.h/2, ai.w, ai.h);
+
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
   ctx.fill();
 
-  // Enemies
-  ctx.fillStyle = "#ff4444";
-  enemies.forEach(e => {
-    ctx.fillRect(e.x, e.y, e.w, e.h);
-  });
-
-  // HUD
-  ctx.fillStyle = "#fff";
-  ctx.font = "14px monospace";
-  ctx.fillText("SCORE: " + score, 30, 40);
-  ctx.fillText("TIME: " + Math.ceil(time), W-140, 40);
-
-  if (gameOver){
-    ctx.fillStyle = "rgba(0,0,0,0.7)";
-    ctx.fillRect(0,0,W,H);
-    ctx.fillStyle = "#fff";
-    ctx.font = "20px monospace";
-    ctx.fillText(msg, 80, H/2);
-    ctx.fillText("Refresh page to play again.", 120, H/2+30);
-  }
+  ctx.fillStyle="#fff";
+  ctx.font="18px monospace";
+  ctx.fillText("Score: "+score, 20, 30);
 }
 
-function loop(now){
-  let dt = (now - lastTime)/1000;
-  lastTime = now;
-  update(dt);
+function loop(){
+  movePlayer();
+  moveAI();
+  ballPhysics();
+  collidePlayer();
+  collideAI();
+  checkGoal();
   draw();
   requestAnimationFrame(loop);
 }
 
-requestAnimationFrame(loop);
+reset();
+loop();
 </script>
 </body>
 </html>
