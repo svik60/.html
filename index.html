@@ -1,44 +1,221 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>Why I Like Soccer</title>
+  <title>Retro Soccer</title>
   <style>
-    body {
-      background-color: #f0f8ff; 
-      color: #333;
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    h1 {
-      color: #1e90ff;
-      text-align: center;
-    }
-    p {
-      background-color: #ffffff;
-      border-left: 5px solid #1e90ff;
-      padding: 10px;
-      margin-bottom: 15px;
-      border-radius: 5px;
-    }
+    body { margin:0; background:#111; display:flex; justify-content:center; align-items:center; height:100vh; color:#fff; font-family:monospace; }
+    canvas { background:#0b3d0b; border:4px solid #fff; image-rendering:pixelated; }
+    #info { position:fixed; top:10px; left:10px; font-size:14px; }
   </style>
 </head>
 <body>
-  <h1>Why I Like Soccer</h1>
+<div id="info">Arrows: Move | Space: Kick | Score before time runs out!</div>
+<canvas id="game" width="640" height="360"></canvas>
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-  <p>
-    I like soccer because it’s fast, exciting, and full of energy. Every match feels
-    different, and I love watching quick passes, teamwork, and unexpected goals.
-  </p>
+const W = canvas.width;
+const H = canvas.height;
 
-  <p>
-    Soccer brings people together. Whether I’m playing with friends or watching a
-    big game, it creates a fun atmosphere and a strong sense of community.
-  </p>
+// Player, ball, goal, enemies
+let player = { x: 80, y: H/2, w: 16, h: 24, speed: 3 };
+let ball = { x: 120, y: H/2, r: 6, vx: 0, vy: 0, free: true };
+let goal = { x: W-60, y: H/2-40, w: 20, h: 80 };
 
-  <p>
-    It keeps me active, helps me improve my skills, and teaches discipline. That mix
-    of challenge and enjoyment is why soccer is my favorite sport.
-  </p>
+let enemies = [];
+for (let i=0;i<4;i++){
+  enemies.push({
+    x: 260 + i*60,
+    y: 80 + i*40,
+    w: 16,
+    h: 24,
+    dir: i%2===0?1:-1,
+    speed: 1.5
+  });
+}
+
+let keys = {};
+let score = 0;
+let time = 60; // seconds
+let lastTime = performance.now();
+let gameOver = false;
+let msg = "";
+
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if (e.key === " " || e.key === "Spacebar") e.preventDefault();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+function update(dt){
+  if (gameOver) return;
+
+  // Timer
+  time -= dt;
+  if (time <= 0){
+    time = 0;
+    gameOver = true;
+    msg = "TIME UP! FINAL SCORE: " + score;
+  }
+
+  // Player movement
+  if (keys["ArrowUp"]) player.y -= player.speed;
+  if (keys["ArrowDown"]) player.y += player.speed;
+  if (keys["ArrowLeft"]) player.x -= player.speed;
+  if (keys["ArrowRight"]) player.x += player.speed;
+
+  // Clamp player
+  player.x = Math.max(20, Math.min(W-80, player.x));
+  player.y = Math.max(40, Math.min(H-40, player.y));
+
+  // Ball follow if free and close to player
+  let dx = ball.x - player.x;
+  let dy = ball.y - player.y;
+  let dist = Math.sqrt(dx*dx + dy*dy);
+  if (ball.free && dist < 30){
+    ball.x = player.x + 20;
+    ball.y = player.y + 4;
+  }
+
+  // Kick
+  if ((keys[" "] || keys["Spacebar"]) && ball.free){
+    ball.free = false;
+    ball.vx = 6;
+    ball.vy = (Math.random()*2-1)*2;
+  }
+
+  // Ball physics
+  if (!ball.free){
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+    ball.vx *= 0.99;
+    ball.vy *= 0.99;
+
+    // Walls
+    if (ball.y - ball.r < 20 || ball.y + ball.r > H-20){
+      ball.vy *= -1;
+    }
+    if (ball.x - ball.r < 20){
+      ball.vx *= -1;
+    }
+
+    // Stop ball
+    if (Math.abs(ball.vx) < 0.1 && Math.abs(ball.vy) < 0.1){
+      resetBall();
+    }
+  }
+
+  // Enemies movement
+  enemies.forEach(e => {
+    e.y += e.dir * e.speed;
+    if (e.y < 40 || e.y > H-40) e.dir *= -1;
+
+    // Collision with ball
+    if (!ball.free && rectCircleCollide(e, ball)){
+      // Deflect ball
+      ball.vx *= -1;
+      ball.vy = (Math.random()*2-1)*3;
+    }
+  });
+
+  // Goal check
+  if (!ball.free && ball.x + ball.r > goal.x && ball.x - ball.r < goal.x+goal.w &&
+      ball.y + ball.r > goal.y && ball.y - ball.r < goal.y+goal.h){
+    score++;
+    resetBall();
+  }
+}
+
+function resetBall(){
+  ball.free = true;
+  ball.x = player.x + 20;
+  ball.y = player.y + 4;
+  ball.vx = 0;
+  ball.vy = 0;
+}
+
+function rectCircleCollide(rect, circle){
+  let closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.w));
+  let closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.h));
+  let dx = circle.x - closestX;
+  let dy = circle.y - closestY;
+  return dx*dx + dy*dy < circle.r*circle.r;
+}
+
+function drawField(){
+  ctx.fillStyle = "#0b3d0b";
+  ctx.fillRect(0,0,W,H);
+
+  // Center line
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(W/2, 20);
+  ctx.lineTo(W/2, H-20);
+  ctx.stroke();
+
+  // Center circle
+  ctx.beginPath();
+  ctx.arc(W/2, H/2, 40, 0, Math.PI*2);
+  ctx.stroke();
+
+  // Boundaries
+  ctx.strokeRect(20,20,W-40,H-40);
+
+  // Goal box
+  ctx.strokeRect(goal.x-20, goal.y-20, goal.w+40, goal.h+40);
+}
+
+function draw(){
+  drawField();
+
+  // Goal
+  ctx.fillStyle = "#ffff00";
+  ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+
+  // Player
+  ctx.fillStyle = "#00ffff";
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+
+  // Ball
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // Enemies
+  ctx.fillStyle = "#ff4444";
+  enemies.forEach(e => {
+    ctx.fillRect(e.x, e.y, e.w, e.h);
+  });
+
+  // HUD
+  ctx.fillStyle = "#fff";
+  ctx.font = "14px monospace";
+  ctx.fillText("SCORE: " + score, 30, 40);
+  ctx.fillText("TIME: " + Math.ceil(time), W-140, 40);
+
+  if (gameOver){
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "20px monospace";
+    ctx.fillText(msg, 80, H/2);
+    ctx.fillText("Refresh page to play again.", 120, H/2+30);
+  }
+}
+
+function loop(now){
+  let dt = (now - lastTime)/1000;
+  lastTime = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
 </body>
 </html>
